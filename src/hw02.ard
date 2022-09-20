@@ -1,8 +1,30 @@
 \import Utils
+\import hw01 (fac)
 
 -- 1. Определите полиморфный tail для списков.
 
+\func tail {A : \Type} (xs : List A) : List A
+  | nil => nil
+  | :: a xs => xs
+
 -- 2. Реализуйте любой (but choose wisely) алгоритм сортировки. Функцию сравнения можно принимать в качестве аргумента.
+
+\func sort {A : \Type} (leq : A -> A -> Bool) (xs : List A) : List A \elim xs
+  | nil => nil
+  | :: x xs => insert leq x (sort leq xs)
+    \where \func insert {A : \Type} (leq : A -> A -> Bool) (y : A) (xs : List A): List A \elim xs
+      | nil => y :: nil
+      | :: x xs => \case leq y x \with {
+        | true => y :: x :: xs
+        | false => x :: insert leq y xs
+      }
+
+\func leqNat (x y : Nat) : Bool
+  | 0, _ => true
+  | suc _, 0 => false
+  | suc x, suc y => leqNat x y
+
+\func sortTest : sort leqNat (4 :: 2 :: 1 :: 3 :: nil) = (1 :: 2 :: 3 :: 4 :: nil) => idp
 
 -- 3. Докажите ассоциативность && и ||.
 
@@ -27,6 +49,8 @@
   | true, true, true => idp
 
 -- 4. Докажите, что fac 3 равно 6.
+
+\func facFact : fac 3 = 6 => idp
 
 -- 5. Докажите следующие пропозициональные тавтологии (choose 2 out of 3).
 
