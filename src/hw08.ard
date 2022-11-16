@@ -1,37 +1,264 @@
+\import Algebra.Ordered
+\import Arith.Nat
+\import Data.Array \hiding (++, ++_nil, map)
 \import Data.Bool
-\import Data.List \hiding (headDef)
-\import Utils (<->)
-\import lect08
+\import Data.List
+\import Data.Maybe
+\import Function.Meta
+\import Meta
+\import Order.StrictOrder
+\import Paths
+\import Paths.Meta
+\import Utils (<->, Empty)
 \import Order.LinearOrder
 \open LinearOrder
+\import Prelude \hiding (nil, ::)
+\import Prelude (nil \as arr-nil, :: \as arr-::)
+\import lect08
 
 -- 1. Реализуйте функцию filter и докажите ее корректность, то есть, что выполнены следующие условия:
 --    * filter p xs является подсписком xs
 --    * Все элементы filter p xs удовлетворяют предикату p
 --    * Любой подсписок xs с тем же свойством является подсписком filter p xs
 
+\data In {A : \Type} (a : A) (xs : List A) \elim xs
+  | :: x xs => in-head (a = x)
+  | :: x xs => in-tail (In a xs)
+
+\func filter {A : \Type} (p : A -> Bool) (xs : List A) : List A \elim xs
+  | nil => nil
+  | :: x xs => \case p x \with {
+    | true => x :: filter p xs
+    | false => filter p xs
+  }
+
+\data Sublist {A : \Type} (xs : List A) (ys : List A) \with
+  | nil, nil => sub-nil
+  | :: x xs, :: y ys => sub-cons (x = y) (Sublist xs ys)
+  | xs, :: y ys => sub-cons-skip (Sublist xs ys)
+
+\func filter-sublist {A : \Type} (p : A -> Bool) (xs : List A) : Sublist (filter p xs) xs \elim xs
+  | nil => sub-nil
+  | :: x xs => mcases \with {
+    | true => sub-cons idp (filter-sublist p xs)
+    | false => sub-cons-skip (filter-sublist p xs)
+  }
+
+\func filter-correct {A : \Type} {p : A -> Bool} {xs : List A} {a : A} : In a (filter p xs) -> p a = true \elim xs
+  | nil => \case __
+  | :: x xs => \case p x \as px, idp : p x = px \with {
+    | true, q => rewrite q $ \case __ \with {
+      | in-head q' => rewrite q' q
+      | in-tail in => filter-correct in
+    }
+    | false, q => rewrite q $ \lam in => filter-correct in
+  }
+
+\func filter-complete {A : \Type} {p : A -> Bool} {xs' xs : List A}
+                      (sub : Sublist xs' xs)
+                      (p-xs' : \Pi (x' : A) -> In x' xs' -> p x' = true)
+  : Sublist xs' (filter p xs) \elim xs', xs, sub
+  | nil, nil, sub-nil => sub-nil
+  | :: x' xs', :: x xs, sub-cons q sub =>
+    rewriteI q $ rewrite (p-xs' x' (in-head idp)) $
+                 sub-cons idp $ filter-complete sub $
+                                \lam x' in => p-xs' x' (in-tail in)
+  | xs', :: x xs, sub-cons-skip sub => mcases \with {
+    | true => sub-cons-skip $ filter-complete sub p-xs'
+    | false => filter-complete sub p-xs'
+  }
+
 -- 2. Докажите, что Perm l1 l2 тогда и только тогда, когда Insertion.sort l1 = Insertion.sort l2.
+
+\func perm-sym {A : \Type} {xs ys : List A} (perm : Perm xs ys) : Perm ys xs \elim xs, ys, perm
+  | nil, nil, perm-nil => perm-nil
+  | :: x xs, :: y ys, perm-cons p perm => perm-cons (inv p) (perm-sym perm)
+  | xs, ys, perm-trans perm1 perm2 => perm-trans (perm-sym perm2) (perm-sym perm1)
+  | :: x (:: x' xs), :: y (:: y' ys), perm-swap p1 p2 p => perm-swap (inv p2) (inv p1) (inv p)
+
+\func perm-sort-iff {A : Dec} (xs ys : List A) : Perm xs ys <-> (Insertion.sort xs = Insertion.sort ys) =>
+  (
+    perm-sort-lem,
+    \lam eq =>
+        \have perm1 => Insertion.sort-perm xs \in
+          \have perm2 => Insertion.sort-perm ys \in
+            \have perm3 : Perm (Insertion.sort xs) (Insertion.sort ys) => rewrite eq $ perm-refl \in
+              perm-trans (perm-trans perm1 perm3) (perm-sym perm2)
+  )
+  \where \func perm-sort-lem {A : Dec} {xs ys : List A} (perm : Perm xs ys)
+    : Insertion.sort xs = Insertion.sort ys \elim xs, ys, perm
+    | nil, nil, perm-nil => idp
+    | :: x xs, :: y ys, perm-cons x=y perm => rewrite x=y $ pmap (Insertion.sort.insert y) $ perm-sort-lem perm
+    | xs, ys, perm-trans perm1 perm2 => perm-sort-lem perm1 *> perm-sort-lem perm2
+    | :: x (:: x' xs), :: y (:: y' ys), perm-swap x=y' x'=y xs=ys =>
+      rewriteI x=y' $ rewriteI x'=y $ rewriteI xs=ys $ Insertion.sort-perm.insert-comm x x' _
 
 -- 3. Докажите, что спецификация "результат является перестановкой входа и отсортирован" является полной для функции sort.
 
-\func completeness {A : Dec} (sort : List A -> List A) (l : List A) (p : Perm l (sort l)) (s : Sorted (sort l)) : sort l = Insertion.sort l
-  => {?}
+\func sort-idempotent {A : Dec} {xs : List A} (s : Sorted xs) : Insertion.sort xs = xs \elim xs, s
+  | nil, sorted-nil => idp
+  | :: x nil, sorted-cons x<= s => rewrite (sort-idempotent s) idp
+  | :: x (:: x' xs), sorted-cons x<= s => rewrite (sort-idempotent s) $ rewrite (dec<=_reduce x<=) $ idp
+
+\func completeness {A : Dec} (sort : List A -> List A)
+                   (xs : List A) (perm : Perm xs (sort xs))
+                   (s : Sorted (sort xs)) : sort xs = Insertion.sort xs =>
+  inv $ perm-sort-iff.perm-sort-lem perm *> sort-idempotent s
 
 -- 4. Определите факториал через хвостовую рекурсию.
 --    Докажите, что он равен обычному определению факториала.
+
+\func fac (n : Nat) => fac-aux n 1
+  \where \func fac-aux (n : Nat) (acc : Nat) : Nat \elim n
+    | 0 => acc
+    | suc n => fac-aux n (acc Nat.* suc n)
+
+\func fac' (n : Nat) : Nat \elim n
+  | 0 => 1
+  | suc n => suc n Nat.* fac' n
+
+\func fac= (n : Nat) : fac n = fac' n => rewriteF NatSemiring.*-comm $ fac=-lem n 1
+  \where {
+    \open fac
+    \func fac=-lem (n : Nat) (acc : Nat) : fac-aux n acc = acc Nat.* fac' n \elim n
+      | 0 => idp
+      | suc n => fac=-lem n _ *> NatSemiring.*-assoc
+  }
 
 -- 5. Определите функцию, которая проверяет правильность скобочной последовательности.
 --    Докажите ее корректность.
 
 \data Paren | Left | Right
 
-\func isBalanced (xs : List Paren) : Bool
-  => {?}
+\func isBalanced (xs : List Paren) : Bool =>
+  \case isBalanced-aux xs 0 \with {
+    | just 0 => true
+    | _ => false
+  }
+  \where \func isBalanced-aux (xs : List Paren) (b : Nat) : Maybe Nat \elim xs, b
+    | nil, b => just b
+    | :: Left xs, b => isBalanced-aux xs (suc b)
+    | :: Right xs, 0 => nothing
+    | :: Right xs, suc b => isBalanced-aux xs b
 
 \data Balanced (xs : List Paren) \with
   | nil => nil-balanced
   | :: Left xs => cons-balanced {ys : List Paren} (Balanced ys) (xs = ys ++ Right :: nil)
   | xs => append-balanced {ys zs : List Paren} (Balanced ys) (Balanced zs) (xs = ys ++ zs)
 
-\func isBalanced-correct (xs : List Paren) : (isBalanced xs = true) <-> Balanced xs
-  => {?}
+\func isBalanced-correct (xs : List Paren) : (isBalanced xs = true) <-> Balanced xs =>
+  (isBalanced-correct-correct xs, isBalanced-correct-complete xs)
+  \where {
+    \open isBalanced
+
+    \func isBalanced-aux-app {xs ys : List Paren} {b1 b2 b3 : Nat}
+                             (p1 : isBalanced-aux xs b1 = just b2)
+                             (p2 : isBalanced-aux ys b2 = just b3)
+      : isBalanced-aux (xs ++ ys) b1 = just b3 \elim xs, b1
+      | nil, b1 => rewrite (just-injective p1) p2
+      | :: Left xs, b1 => isBalanced-aux-app p1 p2
+      | :: Right xs, 0 => \case p1
+      | :: Right xs, suc b1 => isBalanced-aux-app p1 p2
+
+    \func isBalanced-correct-complete (xs : List Paren) (bal : Balanced xs) : isBalanced xs = true =>
+      unfold isBalanced $ rewrite (isBalanced-aux-lem bal 0) idp
+      \where \func isBalanced-aux-lem {xs : List Paren} (bal : Balanced xs) (b : Nat)
+        : isBalanced-aux xs b = just b \elim xs, bal
+        | nil, nil-balanced => idp
+        | :: Left xs, cons-balanced {ys} bal p =>
+          \have ih => isBalanced-aux-lem bal (suc b) \in
+            rewrite p $ isBalanced-aux-app {ys} {Right :: nil} ih idp
+        | xs, append-balanced bal1 bal2 p =>
+          rewrite p $ isBalanced-aux-app (isBalanced-aux-lem bal1 b) (isBalanced-aux-lem bal2 b)
+
+    \func isBalanced-aux-dec {xs : List Paren} {b b' : Nat}
+                             (p : isBalanced-aux xs (b Nat.+ b') = just b)
+      : \Sigma (ys : DArray {b'} (\lam _ => List Paren)) (zs : List Paren)
+               (xs = fold (\lam y => ++ (y ++ Right :: nil)) nil ys ++ zs)
+               (\Pi (i : Fin b') -> Balanced (ys i))
+               (isBalanced-aux zs b = just b)
+    \elim xs, b'
+      | xs, 0 => (arr-nil, xs, idp, (\case __), p)
+      | nil, suc b' => \case suc-lem $ just-injective p
+      | :: Left xs, suc b' =>
+        \have (arr-:: y (arr-:: y' ys), zs, xs=, bal, p') => isBalanced-aux-dec {xs} {b} {suc (suc b')} p \in
+          (
+            arr-:: (Left :: y ++ Right :: y') ys,
+            zs,
+            \have h : ((y ++ Right :: nil) ++ (y' ++ Right :: nil)) = ((y ++ Right :: y') ++ Right :: nil) =>
+              ++-assoc {_} {y} {Right :: nil} *> inv (++-assoc {_} {y} {Right :: y'})
+            \in
+              pmap (Left ::) (xs= *> pmap (`++ zs) (inv ++-assoc *> pmap (`++ _) h)),
+            \case \elim __ \with {
+              | 0 => append-balanced {Left :: y ++ Right :: y'}
+                  (cons-balanced {_} {y} (bal 0) idp) (bal 1) (inv (++-assoc {_} {Left :: y} {Right :: nil}))
+              | suc i => bal (suc (suc i))
+            },
+            p'
+          )
+      | :: Right xs, suc b' => \have (ys, zs, xs=, bal, p') => isBalanced-aux-dec {xs} {b} {b'} p \in
+        (
+          arr-:: nil ys, zs, pmap (Right ::) xs=,
+          \case \elim __ \with {
+            | 0 => nil-balanced
+            | suc i => bal i
+          },
+          p'
+        )
+      \where \func suc-lem {b b' : Nat} (p : suc (b Nat.+ b') = b) : Empty \elim b
+        | 0 => \case p
+        | suc b => suc-lem $ pmap pred p
+
+    \func isBalanced-correct-correct (xs : List Paren) (p : isBalanced xs = true) : Balanced xs =>
+      \case (isBalanced-aux xs 0) \as r, idp : isBalanced-aux xs 0 = r \with {
+        | just 0, q => isBalanced-aux-lem xs q
+        | just (suc b), q => \case rewriteF q $ unfold isBalanced p
+        | nothing, q => \case rewriteF q $ unfold isBalanced p
+      }
+      \where {
+        \func strong-induction (P : Nat -> \Type)
+                               (step : \Pi (n : Nat) -> (\Pi (m : Nat) -> m < n -> P m) -> P n)
+                               (n : Nat) : P n =>
+            strong-induction-lem P step n n LinearOrder.<=-refl
+          \where \func strong-induction-lem (P : Nat -> \Type)
+                                            (step : \Pi (n : Nat) -> (\Pi (m : Nat) -> m < n -> P m) -> P n)
+                                            (n m : Nat)
+                                            (m<=n : m <= n) : P m \elim n, m
+            | _, 0 => step 0 (\lam m m<0 => \case m<0)
+            | 0, suc m => \case m<=n (nonZero>0 (\case __))
+            | suc n, suc m => step (suc m) $
+            \lam m' m'< =>
+                strong-induction-lem P step n m' $ <_suc_<= $ <-transitive-left m'< m<=n
+
+        \func list-strong-induction {A : \Type} (P : List A -> \Type)
+                                    (step : \Pi (xs : List A) ->
+                                        (\Pi (ys : List A) -> (length ys < length xs) -> P ys) ->
+                                        P xs)
+                                    (xs : List A)
+          : P xs =>
+          strong-induction (\lam l => \Pi (xs : List A) -> l = length xs -> P xs)
+              (\lam n ih xs n= => step xs $ \lam ys len< => ih (length ys) (rewrite n= len<) ys idp)
+              (length xs) xs idp
+
+        \func length-app {A : \Type} {xs ys : List A} : length (xs ++ ys) = length xs Nat.+ length ys \elim xs
+          | nil => idp
+          | :: x xs => pmap suc length-app
+
+        \func isBalanced-aux-lem =>
+          list-strong-induction (\lam xs => isBalanced-aux xs 0 = just 0 -> Balanced xs
+          ) $ \lam (xs : List Paren) => \case \elim xs \with {
+            | nil => \lam l= p => nil-balanced
+            | :: Right xs => \lam ih p => \case p
+            | :: Left xs => \lam ih p =>
+                \have (arr-:: y ys, zs, xs=, bal, p) => isBalanced-aux-dec {xs} {0} {1} p \in
+                  \have zs-len : length zs < suc (length xs) =>
+                    rewrite xs= $ rewrite length-app $ <_+-left (length zs) {0} {suc _} $ nonZero>0 (\case __)
+                  \in
+                    \have ih : Balanced zs => ih zs zs-len p \in
+                      \have y-bal : Balanced (Left :: y ++ Right :: nil) => cons-balanced (bal 0) idp \in
+                        \have h : Left :: ((y ++ Right :: nil) ++ nil) ++ zs = Left :: (y ++ Right :: nil) ++ zs =>
+                          pmap (Left ::) $ pmap (`++ zs) $ ++-assoc {_} {y} {Right :: nil}
+                        \in rewrite xs= $ append-balanced y-bal ih h
+          }
+      }
+  }
