@@ -1,4 +1,5 @@
 \import Function.Meta
+\import Meta
 \import Paths
 \import Paths.Meta
 \import Utils (Maybe,just,nothing,maybe,Not)
@@ -124,23 +125,23 @@
 
 -- Нейтральные термы замкнуты относительно редукций.
 \func neutralRed {V : \Set} {t s : Term V} (r : Red1 t s) (n : Neutral t) : Neutral s \elim t, s, r, n
-  | app t t1, s, redBeta idp p1, appNeutral () a
-  | app t t1, app s _, appLeft r idp, appNeutral n a => appNeutral (neutralRed r n) a
-  | app t t1, app _ s1, appRight idp r, appNeutral n (acc f) => appNeutral n (f s1 r)
+  | app t t', s, redBeta idp p', appNeutral n a => \case n
+  | app t t', app s s', appLeft r idp, appNeutral n a => appNeutral (neutralRed r n) a
+  | app t t', app s s', appRight idp r, appNeutral n (acc f) => appNeutral n (f s' r)
 
 -- Нейтральные термы действительно достижимы.
 \func neutralAcc {V : \Set} {t : Term V} (n : Neutral t) : Acc Red1 t \elim t, n
-  | var v, varNeutral => acc (\case \elim __, \elim __)
-  | unit, unitNeutral => acc (\case \elim __, \elim __)
-  | app t t1, appNeutral n a => neutralAppAcc n (neutralAcc n) a
+  | var v, varNeutral => acc (\lam _ => \case __)
+  | unit, unitNeutral => acc (\lam _ => \case __)
+  | app t t', appNeutral n a => neutralAppAcc n (neutralAcc n) a
   \where
     -- Для доказательства утверждения neutralAcc нам понадобится вспомогательное утверждение, которое говорит, что app t s достижим, если t и s достижимы и t нейтрален.
     \func neutralAppAcc {V : \Set} {t s : Term V} (n : Neutral t) (a1 : Acc Red1 t) (a2 : Acc Red1 s)
       : Acc Red1 (app t s) \elim a1, a2
-      | acc f, acc g => acc $ \case \elim __, \elim __ \with {
-        | p0, redBeta p p1 => \case rewriteF p n
-        | app t' _, appLeft r idp => neutralAppAcc (neutralRed r n) (f t' r) (acc g)
-        | app _ s', appRight idp r => neutralAppAcc n (acc f) (g s' r)
+      | acc f1, acc f2 => acc $ \case \elim __, \elim __ \with {
+        | t', redBeta p q => \case rewriteF p n
+        | app t' s', appLeft r idp => neutralAppAcc (neutralRed r n) (f1 t' r) (acc f2)
+        | app t' s', appRight idp r => neutralAppAcc n (acc f1) (f2 s' r)
       }
 
 -- 3. Типизация.
@@ -171,25 +172,24 @@
 -- Одновременно с interpAcc мы докажем, что любой нейтральный терм лежим в интерпретации T.
 \func neutralInterp {V : \Set} (T : Type) {t : Term V} (n : Neutral t) : Interp T t \elim T
   | Unit => neutralAcc n
-  | Arr T1 T2 => \lam s i => neutralInterp T2 (appNeutral n (interpAcc T1 s i))
+  | Arr T1 T2 => \lam s i => neutralInterp T2 $ appNeutral n (interpAcc T1 s i)
 
 \func appAccLeft {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 t \elim a
-  | acc f => {?} -- это упражнение
+  | acc f => acc $ \lam t' r => appAccLeft $ f (app t' s) (appLeft r idp)
 
 \func interpAcc {V : \Set} (T : Type) (t : Term V) (i : Interp T t) : Acc Red1 t \elim T
   | Unit => i
   | Arr T1 T2 => appAccLeft $ interpAcc T2 (app t unit) (i unit (neutralInterp T1 unitNeutral))
 
-\func typeableInterpId {V : \Set} (ctx : V -> Type) (t : Term V) (T : Type) (p : hasType ctx t T)
+\func typeableInterpId {V : \Set} (ctx : V -> Type) (t : Term V) (T : Type) (h : hasType ctx t T)
   : Interp T t
-  => rewriteF return-right $ typeableInterp ctx var (\lam u => neutralInterp (ctx u) varNeutral) p
+  => rewriteF return-right $ typeableInterp ctx var (\lam u => neutralInterp (ctx u) varNeutral) h
 
 -- Это более общее утверждение необходимо для усиления индукционной гипотезы.
 \func typeableInterp {U V : \Set} (ctx : U -> Type) (env : U -> Term V)
                      (C : \Pi (u : U) -> Interp (ctx u) (env u)) {t : Term U} {T : Type}
-                     (p : hasType ctx t T)
-  : Interp T (t >>= env)
-  => {?} -- это упражнение
+                     (h : hasType ctx t T)
+  : Interp T (t >>= env) => {?}
 
 \func typeableAcc {V : \Set} (ctx : V -> Type) (t : Term V) (T : Type)
                   (h : hasType ctx t T) : Acc Red1 t
