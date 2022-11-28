@@ -229,7 +229,7 @@
   => setLem {\Sigma (x : A) (B x)} (\lam t s => \Sigma (p : t.1 = s.1) (transport B p t.2 = s.2))
       (\lam t s => Sigma'-isProp _ (pA t.1 s.1) (\lam p => pB s.1 (transport B p t.2) s.2))
       (\lam p => (idp,idp))
-      (\lam t s p => ext p)
+      (\lam t => ext t)
 
 -- 6. Свойства операций над =.
 
