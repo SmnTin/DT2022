@@ -1,23 +1,49 @@
+\import Equiv
+\import Equiv.Univalence
+\import Function.Meta
+\import Meta
+\import Paths (inv)
+\import Paths.Meta
+\import lect10 (setLem)
 \import lect11
-\import Utils \hiding (transport,Or,inl,inr)
+\import Utils \hiding (transport, Or, inl, inr)
 
 -- 1. Докажите, что если A : \Prop, то Trunc A эквивалентен A.
 
-\func trunc-prop {A : \Prop} : Trunc A <-> A => {?}
+\func trunc-prop {A : \Prop} : Trunc A <-> A => (
+  \lam (trunc a) => a, \lam a => trunc a
+)
 
 -- 2. Докажите следующий закон де Моргана.
 
-\func deMorgan (A B C : \Prop) : (\Sigma A (B `Or` C)) <-> ((\Sigma A B) `Or` (\Sigma A C)) => {?}
+\func deMorgan (A B C : \Prop) : (\Sigma A (B `Or` C)) <-> ((\Sigma A B) `Or` (\Sigma A C)) => (
+  \lam (a, b|c) => \case b|c \with {
+    | inl b => inl (a, b)
+    | inr c => inr (a, c)
+  },
+  \case __ \with {
+    | inl (a, b) => (a, inl b)
+    | inr (a, c) => (a, inr c)
+  }
+)
 
 -- 3. Определите элиминатор для Or через Or-rec, не используя паттерн матчинг на Or.
 
 \func Or-elim {A B : \Prop} (C : Or A B -> \Prop)
               (f : \Pi (x : A) -> C (inl x)) (g : \Pi (y : B) -> C (inr y))
-              (p : A `Or` B) : C p => {?}
+              (p : A `Or` B) : C p =>
+  Or-rec
+      (\lam a => transport C (Path.inProp (inl a) p) (f a))
+      (\lam b => transport C (Path.inProp (inr b) p) (g b))
+      p
 
 -- 4. Докажите, что тип утверждений является множеством.
 
-\func prop-isSet : isSet \Prop => {?}
+\func prop-isSet : isSet \Prop =>
+  setLem (\lam A B => Equiv {A} {B})
+      (\lam A B e1 e2 => Equiv.equals (ext \lam x => Path.inProp _ _))
+      (\lam A => equality=>equivalence idp)
+      equivalence=>equality
 
 -- 5. Докажите, что функции Prop1-to-Prop2 и Prop2-to-Prop1 взаимно обратны и, как следствие, что Prop1 = Prop2.
 
@@ -29,20 +55,62 @@
 
 \func isCogenerator (C : \Type) => \Pi {A B : \Set} (f g : A -> B) (p : \Pi (h : B -> C) -> h `o` f = h `o` g) -> f = g
 
-\func PropIsCogenerator : isCogenerator \Prop => {?}
+\func PropIsCogenerator : isCogenerator \Prop => \lam f g p => ext \lam a =>
+    \have q => pmap (`$ a) $ p ((=) (f a)) \in
+      transport (\lam X => X) q idp
+
 
 -- 6b. Тип X называется инъективным, если для любой функции f : A -> X и любой инъекции i : A -> B сущесвует функция l : B -> X такая, что l `o` i = f.
 --     Докажите, что \Prop инъективен.
 
 \func isInj {A B : \Type} (f : A -> B) => \Pi (x y : A) -> f x = f y -> x = y
 
-\func isInjective (X : \Type) => \Pi {A B : \Type} (f : A -> X) (i : A -> B) (p : isInj i) -> \Sigma (l : B -> X) (l `o` i = f)
+\func isInjective (X : \Type) =>
+  \Pi {A B : \Type} (f : A -> X) (i : A -> B) (p : isInj i) -> \Sigma (l : B -> X) (l `o` i = f)
 
-\func Prop-isInjective : isInjective \Prop => {?}
+\func Prop-isInjective : isInjective \Prop => \lam {A} {B} f i p => {?}
 
 -- Можно сделать только одно из упражнений 7a,7b на выбор.
 -- 7a. Докажите, что (Bool = Bool) = Bool.
 
-\func BoolAut : (Bool = Bool) = Bool => {?}
+\func equality=equivalence {A B : \Type} : (A = B) = Equiv {A} {B} =>
+  QEquiv-to-= univalence
+
+\func BoolAut : (Bool = Bool) = Bool => transport (\lam X => X = Bool) (sym equality=equivalence)
+  $ QEquiv-to-= \new QEquiv {
+  | f e => e false
+  | ret => \case __ \with {
+    | false => \new QEquiv {
+      | f => \lam b => b
+      | ret => \lam b => b
+      | ret_f => \lam b => idp
+      | f_sec => \lam b => idp
+    }
+    | true => \new QEquiv {
+      | f => not
+      | ret => not
+      | ret_f => not-not
+      | f_sec => not-not
+    }
+  }
+  | ret_f e => Equiv.equals $ ext \case \elim __ \with {
+    | true => cases (e false arg addPath, e true arg addPath) \with {
+      | false, p, false, q => inv (Equiv.ret_f {e} true) *> pmap Equiv.ret (q *> inv p) *> Equiv.ret_f false
+      | true, p, true, q => inv (Equiv.ret_f {e} false) *> pmap Equiv.ret (p *> inv q) *> Equiv.ret_f true
+      | false, p, true, q => idp
+      | true, p, false, q => idp
+    }
+    | false => cases (e false arg addPath, e true arg addPath) \with {
+      | false, p, false, q => idp
+      | true, p, true, q => idp
+      | false, p, true, q => idp
+      | true, p, false, q => idp
+    }
+  }
+  | f_sec b => \case \elim b \with {
+    | true => idp
+    | false => idp
+  }
+}
 
 -- 7b. Докажите, что (n+m)-элементное множество равно размеченному объединению n- и m-элементных множеств.
