@@ -1,15 +1,28 @@
+\import Function.Meta
+\import Meta
 \import Utils
 \import lect12
 
 -- 1. Определите функцию negPred : Int -> Int такую, что negPred x = x, если x > 0, и negPred x = x - 1, если x <= 0.
 
-\func negPred (x : Int) : Int => {?}
+\func negPred (x : Int) : Int \elim x
+  | pos (suc n) => suc n
+  | pos 0 => -1
+  | neg n => neg (suc n)
 
 -- 2. Определите функции сложения и умножения для Int.
 
-\func \infixl 6 + (x y : Int) : Int => {?}
+\func \infixl 6 + (x y : Int) : Int \with
+  | pos n, pos m => n Nat.+ m
+  | pos n, neg (suc m) => n Nat.- suc m
+  | neg (suc n), pos m => m Nat.- suc n
+  | neg (suc n), neg (suc m) => neg (suc n Nat.+ suc m)
 
-\func \infixl 7 * (x y : Int) : Int => {?}
+\func \infixl 7 * (x y : Int) : Int \with
+  | pos n, pos m => n Nat.* m
+  | pos n, neg (suc m) => neg (n Nat.* suc m)
+  | neg (suc n), pos m => neg (m Nat.* suc n)
+  | neg (suc n), neg (suc m) => suc n Nat.* suc m
 
 -- 3. Определите тип данных BinNat для бинарных натуральных чисел.
 --    У него должно быть три конструктора: для 0, для чисел вида 2*n и чисел вида 2*n+1.
@@ -17,6 +30,11 @@
 --    Используйте типы данных с условиями, чтобы вычислительно отождествить различные нули.
 
 \data BinNat
+  | bin-0
+  | bin-cons-1 BinNat
+  | bin-cons-0 (n : BinNat) \with {
+  bin-0 => bin-0
+  }
 
 -- 4. Докажите, что функция pred сюръективна.
 
@@ -24,11 +42,14 @@
   | 0 => 0
   | suc n => n
 
-\func pred-is-sur : isSur pred => {?}
+\func pred-is-sur : isSur pred => \lam n => in (suc n, idp)
 
 -- 5. Докажите, что функция suc не сюръективна.
 
-\func suc-is-not-sur (p : isSur suc) : Empty => {?}
+\func suc-is-not-sur (p : isSur suc) : Empty =>
+  \case p 0 \with {
+    | in (n, q : suc n = 0) => \case q
+  }
 
 -- 6. Пусть f : A -> B и g : B -> C ─ некоторые функции.
 --    Докажите, что если f и g сюръективны, то g `o` f также сюръективна.
@@ -36,13 +57,27 @@
 
 \func \fixr 9 o {A B C : \Type} (g : B -> C) (f : A -> B) => \lam a => g (f a)
 
-\func o-sur {A B C : \Type} (f : A -> B) (g : B -> C) (p : isSur f) (q : isSur g) : isSur (g `o` f) => {?}
+\func o-sur {A B C : \Type} (f : A -> B) (g : B -> C) (p : isSur f) (q : isSur g) : isSur (g `o` f) =>
+  \lam c =>
+      \have (in (b, q')) => q c \in
+        \have (in (a, p')) => p b \in
+          in (a, pmap g p' *> q')
 
-\func o-sur' {A B C : \Type} (f : A -> B) (g : B -> C) (p : isSur (g `o` f)) : isSur g => {?}
+\func o-sur' {A B C : \Type} (f : A -> B) (g : B -> C) (p : isSur (g `o` f)) : isSur g =>
+  \lam c => \have (in (a, p')) => p c \in in (f a, p')
 
 -- 7. Определите множество конечных подмножеств множества A, то есть списков элементов A с точностью до перестановок и повторений элементов.
 
-\data Set (A : \Set) : \Set
+\truncated \data In {A : \Type} (a : A) (xs : List A) : \Prop \elim xs
+  | :: x xs => in-head (a = x)
+  | :: x xs => in-tail (In a xs)
+
+\truncated \data Set (A : \Set) : \Set
+  | Set-in (List A)
+  | Set-equals {xs ys : List A} (\Pi (a : A) -> In a xs <-> In a ys) (i : I) \elim i {
+    | left => Set-in xs
+    | right => Set-in ys
+  }
 
 -- 8. Докажите теорему Кантора.
 
@@ -55,11 +90,20 @@
 -- Формально утверждение теоремы Кантора состоит из двух частей:
 -- "существует инъекция из A в Subs A" и "не существует сюръекции из A в Subs A".
 
-\func cantor1 (A : \Set) : \Sigma (f : A -> Subs A) (isInj f)
-  => {?}
+\func cantor1 (A : \Set) : \Sigma (f : A -> Subs A) (isInj f) =>
+  (=, \lam a b => \lam p => sym $ transport (\lam X => X a) p idp)
 
-\func cantor2 (A : \Set) (f : A -> Subs A) (p : isSur f) : Empty
-  => {?}
+\func equiv-absurd {A : \Prop} (p : A <-> Not A) : Empty =>
+  \have a => p.2 (\lam a => p.1 a a) \in p.1 a a
+
+\func cantor2 (A : \Set) (f : A -> Subs A) (p : isSur f) : Empty =>
+  \let Z x => Not (f x x) \in
+    \have (in (z, p')) => p Z \in
+      \have t : f z z = Not (f z z) => pmap (`$ z) p' \in
+        \have e : f z z <-> Not (f z z) =>
+          transport (\lam X => f z z <-> X) t (\lam h => h, \lam h => h)
+        \in
+          equiv-absurd e
 
 -- Optional
 -- 9. Постройте функции Nat -> BinNat и BinNat -> Nat и докажите, что они взаимно обратны.
